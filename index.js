@@ -4,8 +4,8 @@ import { createServer } from "node:http";
 const cfg = {
   botToken: process.env.TELEGRAM_BOT_TOKEN,
   chatId: process.env.TELEGRAM_CHAT_ID,
-  pollMs: Number(process.env.POLL_INTERVAL_MS || 20000),
-  minLiquidity: Number(process.env.MIN_LIQUIDITY_USD || 10000),
+  pollMs: Number(process.env.POLL_INTERVAL_MS || 60000),
+  minLiquidity: Number(process.env.MIN_LIQUIDITY_USD || 0),
   minVolume5m: Number(process.env.MIN_VOLUME_5M_USD || 2000),
   maxAgeMin: Number(process.env.MAX_PAIR_AGE_MINUTES || 5),
   pages: Number(process.env.NEW_POOL_PAGES || 1),
@@ -68,6 +68,22 @@ function explorerUrl(network, address) {
   };
 
   return map[network] ? map[network] + address : null;
+}
+
+function dexScreenerUrl(network, address) {
+  const map = {
+    ethereum: "ethereum",
+    bsc: "bsc",
+    base: "base",
+    arbitrum: "arbitrum",
+    polygon_pos: "polygon",
+    avalanche: "avalanche",
+    solana: "solana"
+  };
+
+  return map[network]
+    ? `https://dexscreener.com/${map[network]}/${address}`
+    : null;
 }
 
 async function getJson(url) {
@@ -153,6 +169,7 @@ function message(p) {
   const age = ageMinutes(p.createdAt);
   const baseAddr = p.addressBase;
   const exp = explorerUrl(p.network, baseAddr);
+  const dex = dexScreenerUrl(p.network, p.address);
 
   return [
     "🚨 <b>NEW DEX PAIR</b>",
@@ -166,6 +183,8 @@ function message(p) {
     `⏱ <b>Pair age:</b> ${age.toFixed(1)} min`,
     "",
     `📍 <b>Base token:</b> <code>${escapeHtml(short(baseAddr || p.address))}</code>`,
+    "",
+    `${dex ? `🔎 <a href="${dex}">DEX Screener</a>` : "🔎 DEX Screener unavailable"}`,
     `🔗 <a href="${p.url}">GeckoTerminal</a>${exp ? ` • <a href="${exp}">Explorer</a>` : ""}`,
     "",
     "⚠️ <i>Verify the contract, liquidity, permissions and trading conditions before trading.</i>"
@@ -238,6 +257,7 @@ const server = createServer((req, res) => {
   res.writeHead(200, {
     "content-type": "text/plain; charset=utf-8"
   });
+
   res.end("All-chain DEX Telegram bot is running.\n");
 });
 
