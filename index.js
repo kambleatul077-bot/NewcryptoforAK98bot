@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { createServer } from "node:http";
 
 const cfg = {
   botToken: process.env.TELEGRAM_BOT_TOKEN,
@@ -9,7 +10,9 @@ const cfg = {
   maxAgeMin: Number(process.env.MAX_PAIR_AGE_MINUTES || 5),
   pages: Number(process.env.NEW_POOL_PAGES || 1),
   networks: (process.env.NETWORKS || "")
-    .split(",").map(s => s.trim()).filter(Boolean)
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean)
 };
 
 if (!cfg.botToken || !cfg.chatId) {
@@ -229,7 +232,17 @@ async function scan() {
   }
 }
 
-async function main() {
+const port = Number(process.env.PORT || 10000);
+
+const server = createServer((req, res) => {
+  res.writeHead(200, {
+    "content-type": "text/plain; charset=utf-8"
+  });
+  res.end("All-chain DEX Telegram bot is running.\n");
+});
+
+server.listen(port, "0.0.0.0", async () => {
+  console.log(`HTTP server listening on 0.0.0.0:${port}`);
   console.log("All-chain DEX Telegram alert bot started.");
 
   console.log({
@@ -245,6 +258,4 @@ async function main() {
   await scan();
 
   setInterval(scan, cfg.pollMs);
-}
-
-main();
+});
