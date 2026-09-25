@@ -6,8 +6,8 @@ const cfg = {
   chatId: process.env.TELEGRAM_CHAT_ID,
   pollMs: Number(process.env.POLL_INTERVAL_MS || 60000),
   minLiquidity: Number(process.env.MIN_LIQUIDITY_USD || 0),
-  minVolume5m: Number(process.env.MIN_VOLUME_5M_USD || 2000),
-  maxAgeMin: Number(process.env.MAX_PAIR_AGE_MINUTES || 5),
+  minVolume5m: Number(process.env.MIN_VOLUME_5M_USD || 0),
+  maxAgeMin: Number(process.env.MAX_PAIR_AGE_MINUTES || 30),
   pages: Number(process.env.NEW_POOL_PAGES || 1),
   networks: (process.env.NETWORKS || "")
     .split(",")
@@ -46,7 +46,9 @@ function ageMinutes(createdAt) {
 
 function short(s, n = 8) {
   if (!s) return "N/A";
-  return s.length > n * 2 ? `${s.slice(0, n)}…${s.slice(-n)}` : s;
+  return s.length > n * 2
+    ? `${s.slice(0, n)}…${s.slice(-n)}`
+    : s;
 }
 
 function escapeHtml(s) {
@@ -130,9 +132,12 @@ async function getNewPools() {
 function normalize(pool) {
   const a = pool?.attributes || {};
   const rel = pool?.relationships || {};
-
   const id = pool?.id || "";
-  const network = id.includes("_") ? id.split("_")[0] : "unknown";
+
+  const network = id.includes("_")
+    ? id.split("_")[0]
+    : "unknown";
+
   const address = id.includes("_")
     ? id.slice(id.indexOf("_") + 1)
     : id;
@@ -142,34 +147,55 @@ function normalize(pool) {
     network,
     address,
     name: a.name || "Unknown pair",
+
     addressBase:
-      rel?.base_token?.data?.id?.split("_").slice(1).join("_") || "",
+      rel?.base_token?.data?.id
+        ?.split("_")
+        .slice(1)
+        .join("_") || "",
+
     priceUsd: num(a.base_token_price_usd),
     liquidity: num(a.reserve_in_usd),
     volume5m: num(a.volume_usd?.m5),
+
     buys5m: num(a.transactions?.m5?.buys),
     sells5m: num(a.transactions?.m5?.sells),
+
     createdAt: a.pool_created_at,
     dex: a.dex_name || rel?.dex?.data?.id || "DEX",
-    url: `https://www.geckoterminal.com/${network}/pools/${address}`
+
+    url:
+      `https://www.geckoterminal.com/${network}/pools/${address}`
   };
 }
 
 function passes(p) {
   const age = ageMinutes(p.createdAt);
 
+  const totalTransactions =
+    p.buys5m + p.sells5m;
+
   return (
     p.liquidity >= cfg.minLiquidity &&
     p.volume5m >= cfg.minVolume5m &&
-    age <= cfg.maxAgeMin
+    age <= cfg.maxAgeMin &&
+    totalTransactions >= 1000
   );
 }
 
 function message(p) {
   const age = ageMinutes(p.createdAt);
+
+  const totalTransactions =
+    p.buys5m + p.sells5m;
+
   const baseAddr = p.addressBase;
-  const exp = explorerUrl(p.network, baseAddr);
-  const dex = dexScreenerUrl(p.network, p.address);
+
+  const exp =
+    explorerUrl(p.network, baseAddr);
+
+  const dex =
+    dexScreenerUrl(p.network, p.address);
 
   return [
     "🚨 <b>NEW DEX PAIR</b>",
@@ -179,13 +205,23 @@ function message(p) {
     `🏦 <b>DEX:</b> ${escapeHtml(p.dex)}`,
     `💧 <b>Liquidity:</b> ${money(p.liquidity)}`,
     `📊 <b>Volume 5m:</b> ${money(p.volume5m)}`,
-    `📈 <b>Buys/Sells 5m:</b> ${p.buys5m}/${p.sells5m}`,
+    `🟢 <b>Buys 5m:</b> ${p.buys5m}`,
+    `🔴 <b>Sells 5m:</b> ${p.sells5m}`,
+    `🔥 <b>Total Tx 5m:</b> ${totalTransactions}`,
     `⏱ <b>Pair age:</b> ${age.toFixed(1)} min`,
     "",
-    `📍 <b>Base token:</b> <code>${escapeHtml(short(baseAddr || p.address))}</code>`,
-    "",
-    `${dex ? `🔎 <a href="${dex}">DEX Screener</a>` : "🔎 DEX Screener unavailable"}`,
-    `🔗 <a href="${p.url}">GeckoTerminal</a>${exp ? ` • <a href="${exp}">Explorer</a>` : ""}`,
+    `📍 <b>Base token:</b> <code>${escapeHtml(
+      short(baseAddr || p.address)
+    )}</code>`,
+    `🔎 ${
+      dex
+        ? `<a href="${dex}">DEX Screener</a> • `
+        : ""
+    }<a href="${p.url}">GeckoTerminal</a>${
+      exp
+        ? ` • <a href="${exp}">Explorer</a>`
+        : ""
+    }`,
     "",
     "⚠️ <i>Verify the contract, liquidity, permissions and trading conditions before trading.</i>"
   ].join("\n");
@@ -209,13 +245,16 @@ async function telegram(text) {
   });
 
   if (!r.ok) {
-    throw new Error(`Telegram ${r.status}: ${await r.text()}`);
+    throw new Error(
+      `Telegram ${r.status}: ${await r.text()}`
+    );
   }
 }
 
 async function scan() {
   try {
     const raw = await getNewPools();
+
     const pools = raw.map(normalize);
 
     pools.sort(
@@ -236,13 +275,16 @@ async function scan() {
     }
 
     while (seen.size > MAX_SEEN) {
-      seen.delete(seen.values().next().value);
+      seen.delete(
+        seen.values().next().value
+      );
     }
 
     console.log(
       new Date().toISOString(),
       `scanned=${pools.length} seen=${seen.size}`
     );
+
   } catch (e) {
     console.error(
       new Date().toISOString(),
@@ -251,31 +293,48 @@ async function scan() {
   }
 }
 
-const port = Number(process.env.PORT || 10000);
+const port =
+  Number(process.env.PORT || 10000);
 
 const server = createServer((req, res) => {
   res.writeHead(200, {
-    "content-type": "text/plain; charset=utf-8"
+    "content-type":
+      "text/plain; charset=utf-8"
   });
 
-  res.end("All-chain DEX Telegram bot is running.\n");
+  res.end(
+    "All-chain DEX Telegram bot is running.\n"
+  );
 });
 
-server.listen(port, "0.0.0.0", async () => {
-  console.log(`HTTP server listening on 0.0.0.0:${port}`);
-  console.log("All-chain DEX Telegram alert bot started.");
+server.listen(
+  port,
+  "0.0.0.0",
+  async () => {
+    console.log(
+      `HTTP server listening on 0.0.0.0:${port}`
+    );
 
-  console.log({
-    pollMs: cfg.pollMs,
-    minLiquidity: cfg.minLiquidity,
-    minVolume5m: cfg.minVolume5m,
-    maxAgeMin: cfg.maxAgeMin,
-    networks: cfg.networks.length
-      ? cfg.networks
-      : "aggregate"
-  });
+    console.log(
+      "All-chain DEX Telegram alert bot started."
+    );
 
-  await scan();
+    console.log({
+      pollMs: cfg.pollMs,
+      minLiquidity: cfg.minLiquidity,
+      minVolume5m: cfg.minVolume5m,
+      maxAgeMin: cfg.maxAgeMin,
+      minTotalTransactions5m: 1000,
+      networks: cfg.networks.length
+        ? cfg.networks
+        : "aggregate"
+    });
 
-  setInterval(scan, cfg.pollMs);
-});
+    await scan();
+
+    setInterval(
+      scan,
+      cfg.pollMs
+    );
+  }
+);
